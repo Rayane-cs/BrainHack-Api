@@ -96,14 +96,14 @@ SMTP_USER   = os.getenv("SMTP_USER", "")
 SMTP_PASS   = os.getenv("SMTP_PASS", "")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")
 
-def send_email(to: str, subject: str, html: str):
+def send_email_sync(to: str, subject: str, html: str):
     try:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
         msg["From"]    = f"BrainHack <{SMTP_USER}>"
         msg["To"]      = to
         msg.attach(MIMEText(html, "html"))
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as server:
             server.ehlo()
             server.starttls()
             server.login(SMTP_USER, SMTP_PASS)
@@ -112,6 +112,14 @@ def send_email(to: str, subject: str, html: str):
     except Exception as e:
         print(f"[EMAIL ERROR] {e}")
         return False
+
+import threading
+
+def send_email(to: str, subject: str, html: str):
+    # Fire and forget email sending to avoid blocking the API response
+    thread = threading.Thread(target=send_email_sync, args=(to, subject, html))
+    thread.start()
+    return True
 
 # ─── Email Templates ──────────────────────────────────────────────────────────
 BASE_STYLE = """
