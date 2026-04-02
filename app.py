@@ -231,18 +231,27 @@ def register():
     conn = cur = None
     try:
         conn = get_db()
-        cur  = conn.cursor()
-        cur.execute("SELECT id FROM participants WHERE email=%s", (data["email"],))
-        if cur.fetchone():
-            return jsonify({"error": "Email already registered"}), 409
+        cur  = conn.cursor(buffered=True)
+        cur.execute("SELECT email, phone, registration_number FROM participants WHERE email=%s OR phone=%s OR registration_number=%s LIMIT 1", 
+                    (data["email"], data["phone"], data["registration_number"]))
+        row = cur.fetchone()
+        if row:
+            if row[0] == data["email"]:
+                return jsonify({"error": "Email already registered"}), 409
+            if row[1] == data["phone"]:
+                return jsonify({"error": "Phone number already registered"}), 409
+            if row[2] == data["registration_number"]:
+                return jsonify({"error": "Registration number already registered"}), 409
+            return jsonify({"error": "Participant already registered"}), 409
 
         cur.execute("""
             INSERT INTO participants
-              (full_name, email, phone, registration_number, level, speciality)
-            VALUES (%s,%s,%s,%s,%s,%s)
+              (full_name, email, phone, registration_number, level, speciality, portfolio_link)
+            VALUES (%s,%s,%s,%s,%s,%s,%s)
         """, (
             data["full_name"], data["email"], data["phone"],
-            data["registration_number"], data["level"], data["speciality"]
+            data["registration_number"], data["level"], data["speciality"],
+            data.get("portfolio_link", "").strip()
         ))
         conn.commit()
         send_email(
