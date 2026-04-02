@@ -97,21 +97,33 @@ SMTP_PASS   = os.getenv("SMTP_PASS", "")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")
 
 def send_email_sync(to: str, subject: str, html: str):
+    _app_pass = SMTP_PASS.replace(' ', '')
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"]    = f"BrainHack <{SMTP_USER}>"
+    msg["To"]      = to
+    msg.attach(MIMEText(html, "html"))
+
+    # Try SSL on port 465 first, fall back to STARTTLS
     try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"]    = f"BrainHack <{SMTP_USER}>"
-        msg["To"]      = to
-        msg.attach(MIMEText(html, "html"))
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as server:
-            server.ehlo()
-            server.starttls()
-            server.login(SMTP_USER, SMTP_PASS)
+        with smtplib.SMTP_SSL(SMTP_HOST, 465, timeout=15) as server:
+            server.login(SMTP_USER, _app_pass)
             server.sendmail(SMTP_USER, to, msg.as_string())
+        print(f'[EMAIL OK] {to} (SSL 465)')
         return True
-    except Exception as e:
-        print(f"[EMAIL ERROR] {e}")
-        return False
+    except Exception as e1:
+        print(f'[EMAIL] SSL 465 failed ({e1}), trying STARTTLS {SMTP_PORT}...')
+        try:
+            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
+                server.ehlo()
+                server.starttls()
+                server.login(SMTP_USER, _app_pass)
+                server.sendmail(SMTP_USER, to, msg.as_string())
+            print(f'[EMAIL OK] {to} (STARTTLS {SMTP_PORT})')
+            return True
+        except Exception as e2:
+            print(f'[EMAIL ERROR] {to}: SSL={e1} | TLS={e2}')
+            return False
 
 import threading
 
