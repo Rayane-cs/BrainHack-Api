@@ -13,9 +13,8 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# Allow requests from any origin (configure in prod via ALLOWED_ORIGINS env var)
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*")
-CORS(app, origins=ALLOWED_ORIGINS)
+# Enable CORS for all routes
+CORS(app)
 
 # ─── Registration Deadline ────────────────────────────────────────────────────
 REG_DEADLINE = datetime(2026, 4, 15, 23, 59, 59, tzinfo=timezone.utc)
