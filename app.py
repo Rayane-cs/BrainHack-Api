@@ -141,15 +141,18 @@ def get_db():
 SMTP_HOST   = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT   = int(os.getenv("SMTP_PORT", 587))
 SMTP_USER   = os.getenv("SMTP_USER", "")
-SMTP_PASS   = os.getenv("SMTP_PASS", "")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")
+
+last_smtp_error = None
 
 # Log SMTP config at startup so Railway logs show what is loaded
 print(f"[SMTP_CONFIG] host={SMTP_HOST} port={SMTP_PORT} user={SMTP_USER!r} pass_set={bool(SMTP_PASS)} admin={ADMIN_EMAIL!r}")
 
 def send_email_sync(to: str, subject: str, html: str):
+    global last_smtp_error
     if not SMTP_USER or not SMTP_PASS:
-        print(f"[EMAIL SKIP] SMTP_USER or SMTP_PASS not configured — skipping email to {to}")
+        last_smtp_error = "SMTP_USER or SMTP_PASS not configured"
+        print(f"[EMAIL SKIP] {last_smtp_error} — skipping email to {to}")
         return False
 
     _app_pass = SMTP_PASS.replace(' ', '')
@@ -175,9 +178,11 @@ def send_email_sync(to: str, subject: str, html: str):
                 server.login(SMTP_USER, _app_pass)
                 server.sendmail(SMTP_USER, to, msg.as_string())
             print(f'[EMAIL OK] {to} (STARTTLS {SMTP_PORT})')
+            last_smtp_error = None
             return True
         except Exception as e2:
-            print(f'[EMAIL ERROR] {to}: SSL={e1} | TLS={e2}')
+            last_smtp_error = f"SSL: {e1} | TLS: {e2}"
+            print(f'[EMAIL ERROR] {to}: {last_smtp_error}')
             return False
 
 import threading
@@ -345,7 +350,10 @@ def send_confirmation():
     if success:
         return jsonify({"message": "Confirmation email sent"}), 200
     else:
-        return jsonify({"error": "Failed to send email"}), 500
+        return jsonify({
+            "error": "Failed to send email",
+            "details": last_smtp_error
+        }), 500
 
 
 @app.route("/api/contact", methods=["POST"])
