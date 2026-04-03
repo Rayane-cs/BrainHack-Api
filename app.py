@@ -5,6 +5,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from werkzeug.exceptions import HTTPException
 import mysql.connector
 from mysql.connector import pooling
 from dotenv import load_dotenv
@@ -13,14 +14,7 @@ from email_templates import (
     get_accepted_email_html,
     get_rejected_email_html
 )
-import socket
 import threading
-
-# ─── Railway Network Fix: Force IPv4 globally ────────────────────────────────
-orig_getaddrinfo = socket.getaddrinfo
-def getaddrinfo_ipv4(host, port, family=0, type=0, proto=0, flags=0):
-    return orig_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
-socket.getaddrinfo = getaddrinfo_ipv4
 
 load_dotenv()
 
@@ -60,6 +54,10 @@ def after_request_cors(response):
 
 @app.errorhandler(Exception)
 def handle_exception(e):
+    # Let Flask handle HTTP exceptions (4xx, 5xx) natively with the correct status code.
+    # Only intercept unexpected runtime errors.
+    if isinstance(e, HTTPException):
+        return _add_cors(e)
     import traceback
     print(f"[SERVER ERROR] {e}")
     traceback.print_exc()
@@ -461,9 +459,9 @@ def _update_status(pid: int, status: str):
         if conn: conn.close()
 
 
-@app.route("/", methods=["GET","HEAD"])
+@app.route("/", methods=["GET", "HEAD"])
 def root():
-    return jsonify({"status":"ok","message":"BrainHack API"}), 200
+    return jsonify({"status": "ok", "message": "BrainHack API"}), 200
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
