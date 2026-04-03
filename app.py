@@ -13,23 +13,56 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# Enable CORS for all routes using ALLOWED_ORIGINS from environment
-allowed_origins = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",")]
-CORS(app, resources={r"/api/*": {"origins": allowed_origins}}, supports_credentials=True)
+# ─── CORS ─────────────────────────────────────────────────────────────────────
+CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=False)
 
-@app.after_request
-def add_cors_headers(response):
-    # FORCE '*' to guarantee CORS fix - fallback for all requests
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS, PUT, DELETE'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+CORS_HEADERS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS, PUT, DELETE",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+}
+
+
+def _add_cors(response):
+    for k, v in CORS_HEADERS.items():
+        response.headers[k] = v
     return response
 
+
+# Handle all OPTIONS preflight requests globally — must come before other handlers
 @app.before_request
-def log_request():
-    print(f"[DEBUG_REQUEST] {request.method} {request.path} from {request.headers.get('Origin')}")
-    if request.method == "OPTIONS":
-        return jsonify({"status": "ok"}), 200
+def handle_preflight():
+    from flask import request as req
+    if req.method == "OPTIONS":
+        from flask import make_response
+        resp = make_response("", 204)
+        for k, v in CORS_HEADERS.items():
+            resp.headers[k] = v
+        return resp
+
+
+@app.after_request
+def after_request_cors(response):
+    return _add_cors(response)
+
+
+# Catch unhandled exceptions so CORS headers are still present on 500s
+@app.errorhandler(Exception)
+def handle_exception(e):
+    import traceback
+    print(f"[SERVER ERROR] {e}")
+    traceback.print_exc()
+    response = jsonify({"error": str(e)})
+    response.status_code = 500
+    return _add_cors(response)
+
+
+@app.errorhandler(500)
+def handle_500(e):
+    print(f"[500 ERROR] {e}")
+    response = jsonify({"error": "Internal server error"})
+    response.status_code = 500
+    return _add_cors(response)
 
 # ─── Registration Deadline ────────────────────────────────────────────────────
 REG_DEADLINE = datetime(2026, 4, 15, 23, 59, 59, tzinfo=timezone.utc)
@@ -55,18 +88,14 @@ def parse_mysql_url(url: str):
 
 
 def get_db_config():
-    # Prioritize full URI env names (Railway-style might provide one URL string)
-    potential_uri = (
-        os.getenv("DB_URL")
-        or os.getenv("DATABASE_URL")
-        or os.getenv("MYSQL_URL")
-        or os.getenv("DB_HOST")
-        or os.getenv("MYSQL_HOST")
-    )
+    # Check all known env var names for a full MySQL URI (Railway injects these in various names)
+    for env_name in ("DB_URL", "DATABASE_URL", "MYSQL_URL", "MYSQL_PRIVATE_URL", "DB_HOST", "MYSQL_HOST"):
+        val = os.getenv(env_name, "")
+        if val.startswith(("mysql://", "mysql+mysqlconnector://", "mysql+pymysql://")):
+            print(f"[DB_CONFIG] Using URI from env var: {env_name}")
+            return parse_mysql_url(val)
 
-    if potential_uri and potential_uri.startswith("mysql://"):
-        return parse_mysql_url(potential_uri)
-
+    # Fall back to individual env vars
     return {
         "host": os.getenv("DB_HOST", os.getenv("MYSQL_HOST", "localhost")),
         "port": int(os.getenv("DB_PORT", os.getenv("MYSQL_PORT", 3306))),
