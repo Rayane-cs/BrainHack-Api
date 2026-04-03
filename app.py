@@ -164,27 +164,42 @@ def send_email_sync(to: str, subject: str, html: str):
     msg.attach(MIMEText(html, "html"))
 
     # Try SSL on port 465 first, fall back to STARTTLS
+    # FIX for Railway: Force IPv4 (AF_INET) because Railway containers often lack
+    # full IPv6 routes resulting in "Network is unreachable" when resolving Gmail.
+    import socket
+    orig_getaddrinfo = socket.getaddrinfo
+    
+    def getaddrinfo_ipv4(host, port, family=0, type=0, proto=0, flags=0):
+        return orig_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
+    
+    socket.getaddrinfo = getaddrinfo_ipv4
+    
     try:
-        with smtplib.SMTP_SSL(SMTP_HOST, 465, timeout=15) as server:
-            server.login(SMTP_USER, _app_pass)
-            server.sendmail(SMTP_USER, to, msg.as_string())
-        print(f'[EMAIL OK] {to} (SSL 465)')
-        return True
-    except Exception as e1:
-        print(f'[EMAIL] SSL 465 failed ({e1}), trying STARTTLS {SMTP_PORT}...')
         try:
-            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
-                server.ehlo()
-                server.starttls()
+            with smtplib.SMTP_SSL(SMTP_HOST, 465, timeout=20) as server:
                 server.login(SMTP_USER, _app_pass)
                 server.sendmail(SMTP_USER, to, msg.as_string())
-            print(f'[EMAIL OK] {to} (STARTTLS {SMTP_PORT})')
+            print(f'[EMAIL OK] {to} (SSL 465)')
             last_smtp_error = None
             return True
-        except Exception as e2:
-            last_smtp_error = f"SSL: {e1} | TLS: {e2}"
-            print(f'[EMAIL ERROR] {to}: {last_smtp_error}')
-            return False
+        except Exception as e1:
+            print(f'[EMAIL] SSL 465 failed ({e1}), trying STARTTLS {SMTP_PORT}...')
+            try:
+                with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as server:
+                    server.ehlo()
+                    server.starttls()
+                    server.login(SMTP_USER, _app_pass)
+                    server.sendmail(SMTP_USER, to, msg.as_string())
+                print(f'[EMAIL OK] {to} (STARTTLS {SMTP_PORT})')
+                last_smtp_error = None
+                return True
+            except Exception as e2:
+                last_smtp_error = f"SSL: {e1} | TLS: {e2}"
+                print(f'[EMAIL ERROR] {to}: {last_smtp_error}')
+                return False
+    finally:
+        # Always restore the original socket resolver
+        socket.getaddrinfo = orig_getaddrinfo
 
 import threading
 
