@@ -144,7 +144,14 @@ SMTP_USER   = os.getenv("SMTP_USER", "")
 SMTP_PASS   = os.getenv("SMTP_PASS", "")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")
 
+# Log SMTP config at startup so Railway logs show what is loaded
+print(f"[SMTP_CONFIG] host={SMTP_HOST} port={SMTP_PORT} user={SMTP_USER!r} pass_set={bool(SMTP_PASS)} admin={ADMIN_EMAIL!r}")
+
 def send_email_sync(to: str, subject: str, html: str):
+    if not SMTP_USER or not SMTP_PASS:
+        print(f"[EMAIL SKIP] SMTP_USER or SMTP_PASS not configured — skipping email to {to}")
+        return False
+
     _app_pass = SMTP_PASS.replace(' ', '')
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
