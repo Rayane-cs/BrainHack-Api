@@ -54,8 +54,6 @@ def after_request_cors(response):
 
 @app.errorhandler(Exception)
 def handle_exception(e):
-    # Let Flask handle HTTP exceptions (4xx, 5xx) natively with the correct status code.
-    # Only intercept unexpected runtime errors.
     if isinstance(e, HTTPException):
         return _add_cors(e)
     import traceback
@@ -359,7 +357,6 @@ def send_confirmation():
 
     html = get_registration_email_html(data)
 
-    # Respond immediately — SMTP runs in background thread
     send_email_sync(email, "BrainHack — Registration Received ✓", html)
     return jsonify({"message": "Confirmation email sent"}), 200
 
@@ -389,9 +386,9 @@ def contact():
         <p><strong>Message:</strong><br>{data['message']}</p>
     </div>"""
 
-    # Respond immediately — SMTP runs in background thread
-    send_email_sync(email, "BrainHack — Registration Received ✓", html)
-    return jsonify({"message": "Confirmation email sent"}), 200
+    # FIX: use 'recipient' (admin inbox) not undefined 'email', with correct subject
+    send_email_sync(recipient, f"BrainHack — New Contact from {data['name']}", html)
+    return jsonify({"message": "Message sent successfully"}), 200
 
 
 @app.route("/api/participants", methods=["GET"])
