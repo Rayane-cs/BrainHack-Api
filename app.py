@@ -88,8 +88,9 @@ def parse_mysql_url(url: str):
 
 
 def get_db_config():
-    # Check all known env var names for a full MySQL URI (Railway injects these in various names)
-    for env_name in ("DB_URL", "DATABASE_URL", "MYSQL_URL", "MYSQL_PRIVATE_URL", "DB_HOST", "MYSQL_HOST"):
+    # Check all known env var names for a full MySQL URI (Railway injects these natively)
+    # Prefer Railway's native MYSQL_URL/MYSQL_PUBLIC_URL over manual DB_URL
+    for env_name in ("MYSQL_URL", "MYSQL_PUBLIC_URL", "DATABASE_URL", "DB_URL", "MYSQL_PRIVATE_URL", "DB_HOST"):
         val = os.getenv(env_name, "")
         if val.startswith(("mysql://", "mysql+mysqlconnector://", "mysql+pymysql://")):
             print(f"[DB_CONFIG] Using URI from env var: {env_name}")
@@ -109,9 +110,10 @@ DB_CONFIG = get_db_config()
 print(f"[DB_CONFIG] host={DB_CONFIG['host']} port={DB_CONFIG['port']} user={DB_CONFIG['user']} db={DB_CONFIG['database']}")
 
 connection_pool = None
+last_pool_error = None
 
 def init_db_pool():
-    global connection_pool
+    global connection_pool, last_pool_error
     if connection_pool is not None:
         return connection_pool
     try:
@@ -120,9 +122,11 @@ def init_db_pool():
             pool_size=5,
             **DB_CONFIG
         )
+        last_pool_error = None
         return connection_pool
     except Exception as e:
         print(f"[DB POOL ERROR] {e}")
+        last_pool_error = str(e)
         connection_pool = None
         return None
 
@@ -130,7 +134,7 @@ def init_db_pool():
 def get_db():
     pool = init_db_pool()
     if pool is None:
-        raise RuntimeError("Database connection pool is not available. Check DB env vars and server status.")
+        raise RuntimeError(f"Database connection pool is not available. Check DB env vars and server status. Error: {last_pool_error}")
     return pool.get_connection()
 
 # ─── Email Config ─────────────────────────────────────────────────────────────
@@ -254,7 +258,15 @@ def tpl_rejected(name: str) -> str:
 
 @app.route("/api/health", methods=["GET"])
 def health():
-    return jsonify({"status": "ok", "registration_open": registration_open()}), 200
+    safe_config = DB_CONFIG.copy()
+    if "password" in safe_config:
+        safe_config["password"] = "***"
+    return jsonify({
+        "status": "ok", 
+        "registration_open": registration_open(),
+        "db_config": safe_config,
+        "db_pool_error": last_pool_error
+    }), 200
 
 
 @app.route("/api/register", methods=["POST"])
