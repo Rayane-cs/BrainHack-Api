@@ -8,7 +8,11 @@ from flask_cors import CORS
 import mysql.connector
 from mysql.connector import pooling
 from dotenv import load_dotenv
-from email_templates import get_registration_email_html
+from email_templates import (
+    get_registration_email_html,
+    get_accepted_email_html,
+    get_rejected_email_html
+)
 
 load_dotenv()
 
@@ -139,16 +143,20 @@ def get_db():
     return pool.get_connection()
 
 # ─── Email Config ─────────────────────────────────────────────────────────────
+# Support both custom SMTP names and the user-suggested GMAIL_* names
 SMTP_HOST   = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT   = int(os.getenv("SMTP_PORT", 587))
-SMTP_USER   = os.getenv("SMTP_USER", "")
-SMTP_PASS   = os.getenv("SMTP_PASS", "")
+SMTP_USER   = os.getenv("SMTP_USER") or os.getenv("GMAIL_ADDRESS") or ""
+SMTP_PASS   = os.getenv("SMTP_PASS") or os.getenv("GMAIL_APP_PASSWORD") or ""
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")
 
 last_smtp_error = None
 
 # Log SMTP config at startup so Railway logs show what is loaded
-print(f"[SMTP_CONFIG] host={SMTP_HOST} port={SMTP_PORT} user={SMTP_USER!r} pass_set={bool(SMTP_PASS)} admin={ADMIN_EMAIL!r}")
+if not SMTP_USER or not SMTP_PASS:
+    print("[SMTP_WARNING] SMTP_USER/PASS or GMAIL_ADDRESS/APP_PASSWORD are NOT set. Emails will fail.")
+else:
+    print(f"[SMTP_CONFIG] host={SMTP_HOST} port={SMTP_PORT} user={SMTP_USER!r} admin={ADMIN_EMAIL!r}")
 
 def send_email_sync(to: str, subject: str, html: str):
     global last_smtp_error
@@ -364,9 +372,9 @@ def _update_status(pid: int, status: str):
         conn.commit()
 
         if status == "accepted":
-            send_email(row["email"], "BrainHack — You're Accepted! 🎉", tpl_accepted(row["full_name"]))
+            send_email(row["email"], "BrainHack — You're Accepted! 🎉", get_accepted_email_html(row["full_name"]))
         else:
-            send_email(row["email"], "BrainHack — Application Update", tpl_rejected(row["full_name"]))
+            send_email(row["email"], "BrainHack — Application Update", get_rejected_email_html(row["full_name"]))
 
         return jsonify({"message": f"Participant {status}"}), 200
     except Exception as e:
