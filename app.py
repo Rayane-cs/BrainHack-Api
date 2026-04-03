@@ -17,8 +17,6 @@ import socket
 import threading
 
 # ─── Railway Network Fix: Force IPv4 globally ────────────────────────────────
-# Railway containers sometimes lack valid IPv6 routes, causing "Network is unreachable"
-# errors when resolving global hostnames like smtp.gmail.com. We force IPv4 here.
 orig_getaddrinfo = socket.getaddrinfo
 def getaddrinfo_ipv4(host, port, family=0, type=0, proto=0, flags=0):
     return orig_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
@@ -44,7 +42,6 @@ def _add_cors(response):
     return response
 
 
-# Handle all OPTIONS preflight requests globally — must come before other handlers
 @app.before_request
 def handle_preflight():
     from flask import request as req
@@ -61,7 +58,6 @@ def after_request_cors(response):
     return _add_cors(response)
 
 
-# Catch unhandled exceptions so CORS headers are still present on 500s
 @app.errorhandler(Exception)
 def handle_exception(e):
     import traceback
@@ -103,15 +99,12 @@ def parse_mysql_url(url: str):
 
 
 def get_db_config():
-    # Check all known env var names for a full MySQL URI (Railway injects these natively)
-    # Prefer Railway's native MYSQL_URL/MYSQL_PUBLIC_URL over manual DB_URL
     for env_name in ("MYSQL_URL", "MYSQL_PUBLIC_URL", "DATABASE_URL", "DB_URL", "MYSQL_PRIVATE_URL", "DB_HOST"):
         val = os.getenv(env_name, "")
         if val.startswith(("mysql://", "mysql+mysqlconnector://", "mysql+pymysql://")):
             print(f"[DB_CONFIG] Using URI from env var: {env_name}")
             return parse_mysql_url(val)
 
-    # Fall back to individual env vars
     return {
         "host": os.getenv("DB_HOST", os.getenv("MYSQL_HOST", "localhost")),
         "port": int(os.getenv("DB_PORT", os.getenv("MYSQL_PORT", 3306))),
@@ -153,7 +146,6 @@ def get_db():
     return pool.get_connection()
 
 # ─── Email Config ─────────────────────────────────────────────────────────────
-# Support both custom SMTP names and the user-suggested GMAIL_* names
 SMTP_HOST   = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT   = int(os.getenv("SMTP_PORT", 587))
 SMTP_USER   = os.getenv("SMTP_USER") or os.getenv("GMAIL_ADDRESS") or ""
@@ -162,11 +154,11 @@ ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")
 
 last_smtp_error = None
 
-# Log SMTP config at startup so Railway logs show what is loaded
 if not SMTP_USER or not SMTP_PASS:
     print("[SMTP_WARNING] SMTP_USER/PASS or GMAIL_ADDRESS/APP_PASSWORD are NOT set. Emails will fail.")
 else:
     print(f"[SMTP_CONFIG] host={SMTP_HOST} port={SMTP_PORT} user={SMTP_USER!r} admin={ADMIN_EMAIL!r}")
+
 
 def send_email_sync(to: str, subject: str, html: str):
     global last_smtp_error
@@ -188,11 +180,8 @@ def send_email_sync(to: str, subject: str, html: str):
     msg["To"]      = to
     msg.attach(MIMEText(html, "html"))
 
-    # Determine connection order. If user set 587, try STARTTLS first.
-    # We use a 10s timeout to avoid keeping the user waiting 40s during hangs.
     TIMEOUT = 10
-    
-    # attempt 1: STARTTLS on 587 (Standard for Gmail App Passwords on cloud providers)
+
     if SMTP_PORT == 587:
         print(f"[SMTP] Attempting STARTTLS on {SMTP_HOST}:{SMTP_PORT} (timeout={TIMEOUT}s)...")
         try:
@@ -207,8 +196,7 @@ def send_email_sync(to: str, subject: str, html: str):
         except Exception as e:
             print(f"[SMTP] STARTTLS failed: {e}")
             last_smtp_error = str(e)
-            
-        # Fallback to SSL 465
+
         print(f"[SMTP] Falling back to SSL on {SMTP_HOST}:465...")
         try:
             with smtplib.SMTP_SSL(SMTP_HOST, 465, timeout=TIMEOUT) as server:
@@ -223,7 +211,6 @@ def send_email_sync(to: str, subject: str, html: str):
             return False
 
     else:
-        # Default/configured was not 587, try SSL 465 first
         print(f"[SMTP] Attempting SSL on {SMTP_HOST}:465 (timeout={TIMEOUT}s)...")
         try:
             with smtplib.SMTP_SSL(SMTP_HOST, 465, timeout=TIMEOUT) as server:
@@ -236,7 +223,6 @@ def send_email_sync(to: str, subject: str, html: str):
             print(f"[SMTP] SSL 465 failed: {e}")
             last_smtp_error = str(e)
 
-        # Fallback to STARTTLS on configured port
         print(f"[SMTP] Falling back to STARTTLS on {SMTP_HOST}:{SMTP_PORT}...")
         try:
             with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=TIMEOUT) as server:
@@ -252,16 +238,13 @@ def send_email_sync(to: str, subject: str, html: str):
             last_smtp_error = f"465: {last_smtp_error} | {SMTP_PORT}: {e}"
             return False
 
-import threading
 
 def send_email(to: str, subject: str, html: str):
-    # Send synchronously since background threads spawned inside Flask requests
-    # can be immediately killed by Gunicorn once the HTTP response is returned.
-    # It takes ~1-2 seconds but guarantees delivery.
-    return send_email_sync(to, subject, html)
+    """Fire-and-forget: spawns a daemon thread so HTTP response is never blocked by SMTP."""
+    t = threading.Thread(target=send_email_sync, args=(to, subject, html), daemon=True)
+    t.start()
+    return True
 
-# ─── Email Templates ──────────────────────────────────────────────────────────
-# All templates have been moved to backend/email_templates.py to keep app.py clean.
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
 
@@ -271,7 +254,7 @@ def health():
     if "password" in safe_config:
         safe_config["password"] = "***"
     return jsonify({
-        "status": "ok", 
+        "status": "ok",
         "registration_open": registration_open(),
         "db_config": safe_config,
         "db_pool_error": last_pool_error
@@ -297,8 +280,10 @@ def register():
     try:
         conn = get_db()
         cur  = conn.cursor(buffered=True)
-        cur.execute("SELECT email, phone, registration_number FROM participants WHERE email=%s OR phone=%s OR registration_number=%s LIMIT 1", 
-                    (data["email"], data["phone"], data["registration_number"]))
+        cur.execute(
+            "SELECT email, phone, registration_number FROM participants WHERE email=%s OR phone=%s OR registration_number=%s LIMIT 1",
+            (data["email"], data["phone"], data["registration_number"])
+        )
         row = cur.fetchone()
         if row:
             if row[0] == data["email"]:
@@ -331,18 +316,16 @@ def register():
 def check_email():
     data = request.get_json(force=True) or {}
     email = data.get("email", "").strip().lower()
-    
+
     if not email:
         return jsonify({"error": "Missing email"}), 400
-        
+
     conn = cur = None
     try:
         conn = get_db()
         cur  = conn.cursor(buffered=True)
         cur.execute("SELECT id FROM participants WHERE email=%s LIMIT 1", (email,))
         row = cur.fetchone()
-        
-        # If row exists, the email is already taken
         return jsonify({"available": row is None}), 200
     except Exception as e:
         print(f"[CHECK EMAIL ERROR] {e}")
@@ -360,20 +343,20 @@ def send_confirmation():
     if not email:
         return jsonify({"error": "Missing recipient email"}), 400
 
-    # If SMTP isn't configured, return success for API flow and avoid blocking users.
     if not SMTP_USER or not SMTP_PASS:
         print("[SMTP INFO] send_confirmation: SMTP not configured, skipping real send")
         return jsonify({"message": "Confirmation email is disabled on this server"}), 200
 
     html = get_registration_email_html(data)
-    success = send_email(email, "BrainHack — Registration Received ✓", html)
 
-    if success:
-        return jsonify({"message": "Confirmation email sent"}), 200
-    return jsonify({
-        "error": "Failed to send confirmation email",
-        "details": last_smtp_error or "Unknown SMTP error"
-    }), 502
+    # Respond immediately — SMTP runs in background thread
+    threading.Thread(
+        target=send_email_sync,
+        args=(email, "BrainHack — Registration Received ✓", html),
+        daemon=True
+    ).start()
+
+    return jsonify({"message": "Confirmation email sent"}), 200
 
 
 @app.route("/api/contact", methods=["POST"])
@@ -394,7 +377,6 @@ def contact():
         print("[SMTP INFO] contact: no recipient configured, disabling real send")
         return jsonify({"message": "Contact form is temporarily disabled"}), 200
 
-    # Messages to the admin
     html = f"""<div style='font-family:sans-serif;background:#03030d;color:#e2e8ff;padding:24px;'>
         <h2 style='color:#818cf8;'>New Question — BrainHack</h2>
         <p><strong>Name:</strong> {data['name']}</p>
@@ -402,16 +384,14 @@ def contact():
         <p><strong>Message:</strong><br>{data['message']}</p>
     </div>"""
 
-    full_subject = f"BrainHack Contact: {data['name']}"
+    # Respond immediately — SMTP runs in background thread
+    threading.Thread(
+        target=send_email_sync,
+        args=(recipient, f"BrainHack Contact: {data['name']}", html),
+        daemon=True
+    ).start()
 
-    success = send_email(recipient, full_subject, html)
-    if success:
-        return jsonify({"message": "Message sent"}), 200
-
-    return jsonify({
-        "error": "Failed to send contact message",
-        "details": last_smtp_error or "Unknown SMTP error"
-    }), 502
+    return jsonify({"message": "Message sent"}), 200
 
 
 @app.route("/api/participants", methods=["GET"])
