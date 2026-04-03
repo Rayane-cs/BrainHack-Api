@@ -14,8 +14,22 @@ load_dotenv()
 app = Flask(__name__)
 
 # Enable CORS for all routes using ALLOWED_ORIGINS from environment
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+allowed_origins = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",")]
 CORS(app, resources={r"/api/*": {"origins": allowed_origins}}, supports_credentials=True)
+
+@app.after_request
+def add_cors_headers(response):
+    # FORCE '*' to guarantee CORS fix - fallback for all requests
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS, PUT, DELETE'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+    return response
+
+@app.before_request
+def log_request():
+    print(f"[DEBUG_REQUEST] {request.method} {request.path} from {request.headers.get('Origin')}")
+    if request.method == "OPTIONS":
+        return jsonify({"status": "ok"}), 200
 
 # ─── Registration Deadline ────────────────────────────────────────────────────
 REG_DEADLINE = datetime(2026, 4, 15, 23, 59, 59, tzinfo=timezone.utc)
