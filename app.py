@@ -360,9 +360,10 @@ def send_confirmation():
     if not email:
         return jsonify({"error": "Missing email"}), 400
 
-    # Ensure we have a configured admin SMTP target in case this endpoint is used
+    # Graceful handling when SMTP isn't set in non-production/dev environments.
     if not SMTP_USER or not SMTP_PASS:
-        return jsonify({"error": "SMTP not configured"}), 500
+        print("[SMTP WARNING] send_confirmation: SMTP not configured")
+        return jsonify({"message": "Confirmation email is not configured on server"}), 200
 
     # Send the email synchronously to guarantee delivery since Gunicorn
     # can kill background threads.
@@ -378,7 +379,7 @@ def send_confirmation():
         return jsonify({
             "error": "Failed to send email",
             "details": last_smtp_error
-        }), 500
+        }), 502
 
 
 @app.route("/api/contact", methods=["POST"])
@@ -388,8 +389,10 @@ def contact():
         if not data.get(f, "").strip():
             return jsonify({"error": f"Missing field: {f}"}), 400
 
-    if not ADMIN_EMAIL or not ADMIN_EMAIL.strip():
-        return jsonify({"error": "Admin email not configured"}), 500
+    admin_recipient = ADMIN_EMAIL.strip() if ADMIN_EMAIL and ADMIN_EMAIL.strip() else SMTP_USER.strip()
+    if not admin_recipient:
+        print("[SMTP WARNING] contact: Admin email not configured and SMTP_USER unavailable")
+        return jsonify({"message": "Contact form submissions are currently disabled"}), 200
 
     html = f"""<div style="font-family:sans-serif;background:#03030d;color:#e2e8ff;padding:24px;">
         <h2 style="color:#818cf8;">New Question — BrainHack</h2>
@@ -397,13 +400,13 @@ def contact():
         <p><strong>Email:</strong> {data['email']}</p>
         <p><strong>Message:</strong><br>{data['message']}</p>
     </div>"""
-    ok = send_email(ADMIN_EMAIL, f"BrainHack Question from {data['name']}", html)
+    ok = send_email(admin_recipient, f"BrainHack Question from {data['name']}", html)
     if ok:
         return jsonify({"message": "Message sent"}), 200
     return jsonify({
         "error": "Failed to send email",
         "details": last_smtp_error
-    }), 500
+    }), 502
 
 
 @app.route("/api/participants", methods=["GET"])
