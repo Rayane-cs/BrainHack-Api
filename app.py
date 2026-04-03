@@ -1,5 +1,7 @@
 import os
 import smtplib
+import json
+import urllib.request
 from datetime import datetime, timezone
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -146,11 +148,15 @@ def get_db():
     return pool.get_connection()
 
 # ─── Email Config ─────────────────────────────────────────────────────────────
-SMTP_HOST   = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT   = int(os.getenv("SMTP_PORT", 587))
-SMTP_USER   = os.getenv("SMTP_USER") or os.getenv("GMAIL_ADDRESS") or ""
-SMTP_PASS   = os.getenv("SMTP_PASS") or os.getenv("GMAIL_APP_PASSWORD") or ""
-ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")
+SMTP_HOST      = os.getenv("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT      = int(os.getenv("SMTP_PORT", 587))
+SMTP_USER      = os.getenv("SMTP_USER") or os.getenv("GMAIL_ADDRESS") or ""
+SMTP_PASS      = os.getenv("SMTP_PASS") or os.getenv("GMAIL_APP_PASSWORD") or ""
+ADMIN_EMAIL    = os.getenv("ADMIN_EMAIL", "")
+
+# Resend API support (https://resend.com)
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+RESEND_FROM    = os.getenv("RESEND_FROM", f"BrainHack <{SMTP_USER}>")
 
 last_smtp_error = None
 
@@ -160,24 +166,71 @@ else:
     print(f"[SMTP_CONFIG] host={SMTP_HOST} port={SMTP_PORT} user={SMTP_USER!r} admin={ADMIN_EMAIL!r}")
 
 
-def send_email_sync(to: str, subject: str, html: str):
+def send_email_resend(to: str, subject: str, html: str) -> bool:
     global last_smtp_error
-    if not SMTP_USER or not SMTP_PASS:
-        last_smtp_error = "SMTP_USER or SMTP_PASS not configured"
-        print(f"[EMAIL SKIP] {last_smtp_error} — skipping email to {to}")
+    if not RESEND_API_KEY:
+        last_smtp_error = "RESEND_API_KEY not configured"
         return False
 
+    payload = {
+        "from": RESEND_FROM,
+        "to": to,
+        "subject": subject,
+        "html": html
+    }
+
+    req = urllib.request.Request(
+        "https://api.resend.com/emails",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {RESEND_API_KEY}"
+        },
+        method="POST"
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            status = resp.getcode()
+            if 200 <= status < 300:
+                print(f"[RESEND] Email sent to {to} (status={status})")
+                last_smtp_error = None
+                return True
+            last_smtp_error = f"Resend API status {status}"
+            print(f"[RESEND] failed: {last_smtp_error}")
+            return False
+    except Exception as e:
+        last_smtp_error = str(e)
+        print(f"[RESEND] error: {e}")
+        return False
+
+
+def send_email_sync(to: str, subject: str, html: str):
+    global last_smtp_error
     if not to or not str(to).strip():
         last_smtp_error = "Recipient email is missing"
         print(f"[EMAIL SKIP] {last_smtp_error} — skipping subject {subject}")
         return False
 
     to = str(to).strip()
+
+    # Try Resend first (preferred API-based fallback in blocked SMTP environments)
+    if RESEND_API_KEY:
+        print("[RESEND] Using Resend API")
+        if send_email_resend(to, subject, html):
+            return True
+        print(f"[RESEND] failed, will try SMTP fallback, last error: {last_smtp_error}")
+
+    if not SMTP_USER or not SMTP_PASS:
+        last_smtp_error = "SMTP_USER or SMTP_PASS not configured"
+        print(f"[EMAIL SKIP] {last_smtp_error} — skipping email to {to}")
+        return False
+
     _app_pass = SMTP_PASS.replace(' ', '')
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"]    = f"BrainHack <{SMTP_USER}>"
-    msg["To"]      = to
+    msg["From"] = f"BrainHack <{SMTP_USER}>"
+    msg["To"] = to
     msg.attach(MIMEText(html, "html"))
 
     TIMEOUT = 10
