@@ -183,10 +183,10 @@ def send_email_sync(to: str, subject: str, html: str):
 import threading
 
 def send_email(to: str, subject: str, html: str):
-    # Fire and forget email sending to avoid blocking the API response
-    thread = threading.Thread(target=send_email_sync, args=(to, subject, html))
-    thread.start()
-    return True
+    # Send synchronously since background threads spawned inside Flask requests
+    # can be immediately killed by Gunicorn once the HTTP response is returned.
+    # It takes ~1-2 seconds but guarantees delivery.
+    return send_email_sync(to, subject, html)
 
 # ─── Email Templates ──────────────────────────────────────────────────────────
 BASE_STYLE = """
