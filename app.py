@@ -259,6 +259,7 @@ def test_smtp():
     return jsonify({"sent": result, "last_error": last_smtp_error}), 200
 
 
+
 @app.route("/api/health", methods=["GET"])
 def health():
     safe_config = DB_CONFIG.copy()
@@ -459,6 +460,10 @@ def _update_status(pid: int, status: str):
         if cur:  cur.close()
         if conn: conn.close()
 
+
+@app.route("/", methods=["GET","HEAD"])
+def root():
+    return jsonify({"status":"ok","message":"BrainHack API"}), 200
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
