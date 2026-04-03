@@ -175,6 +175,12 @@ def send_email_sync(to: str, subject: str, html: str):
         print(f"[EMAIL SKIP] {last_smtp_error} — skipping email to {to}")
         return False
 
+    if not to or not str(to).strip():
+        last_smtp_error = "Recipient email is missing"
+        print(f"[EMAIL SKIP] {last_smtp_error} — skipping subject {subject}")
+        return False
+
+    to = str(to).strip()
     _app_pass = SMTP_PASS.replace(' ', '')
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
@@ -349,10 +355,14 @@ def check_email():
 @app.route("/api/send-confirmation", methods=["POST"])
 def send_confirmation():
     data = request.get_json(force=True) or {}
-    email = data.get("email")
+    email = str(data.get("email", "")).strip()
 
     if not email:
         return jsonify({"error": "Missing email"}), 400
+
+    # Ensure we have a configured admin SMTP target in case this endpoint is used
+    if not SMTP_USER or not SMTP_PASS:
+        return jsonify({"error": "SMTP not configured"}), 500
 
     # Send the email synchronously to guarantee delivery since Gunicorn
     # can kill background threads.
@@ -378,6 +388,9 @@ def contact():
         if not data.get(f, "").strip():
             return jsonify({"error": f"Missing field: {f}"}), 400
 
+    if not ADMIN_EMAIL or not ADMIN_EMAIL.strip():
+        return jsonify({"error": "Admin email not configured"}), 500
+
     html = f"""<div style="font-family:sans-serif;background:#03030d;color:#e2e8ff;padding:24px;">
         <h2 style="color:#818cf8;">New Question — BrainHack</h2>
         <p><strong>Name:</strong> {data['name']}</p>
@@ -387,7 +400,10 @@ def contact():
     ok = send_email(ADMIN_EMAIL, f"BrainHack Question from {data['name']}", html)
     if ok:
         return jsonify({"message": "Message sent"}), 200
-    return jsonify({"error": "Failed to send email"}), 500
+    return jsonify({
+        "error": "Failed to send email",
+        "details": last_smtp_error
+    }), 500
 
 
 @app.route("/api/participants", methods=["GET"])
