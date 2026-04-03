@@ -358,54 +358,59 @@ def send_confirmation():
     email = str(data.get("email", "")).strip()
 
     if not email:
-        return jsonify({"error": "Missing email"}), 400
+        return jsonify({"error": "Missing recipient email"}), 400
 
-    # Graceful handling when SMTP isn't set in non-production/dev environments.
+    # If SMTP isn't configured, return success for API flow and avoid blocking users.
     if not SMTP_USER or not SMTP_PASS:
-        print("[SMTP WARNING] send_confirmation: SMTP not configured")
-        return jsonify({"message": "Confirmation email is not configured on server"}), 200
+        print("[SMTP INFO] send_confirmation: SMTP not configured, skipping real send")
+        return jsonify({"message": "Confirmation email is disabled on this server"}), 200
 
-    # Send the email synchronously to guarantee delivery since Gunicorn
-    # can kill background threads.
-    success = send_email(
-        email,
-        "BrainHack — Registration Received ✓",
-        get_registration_email_html(data)
-    )
-    
+    html = get_registration_email_html(data)
+    success = send_email(email, "BrainHack — Registration Received ✓", html)
+
     if success:
         return jsonify({"message": "Confirmation email sent"}), 200
-    else:
-        return jsonify({
-            "error": "Failed to send email",
-            "details": last_smtp_error
-        }), 502
+    return jsonify({
+        "error": "Failed to send confirmation email",
+        "details": last_smtp_error or "Unknown SMTP error"
+    }), 502
 
 
 @app.route("/api/contact", methods=["POST"])
 def contact():
     data = request.get_json(force=True) or {}
-    for f in ["name", "email", "message"]:
-        if not data.get(f, "").strip():
-            return jsonify({"error": f"Missing field: {f}"}), 400
 
-    admin_recipient = ADMIN_EMAIL.strip() if ADMIN_EMAIL and ADMIN_EMAIL.strip() else SMTP_USER.strip()
-    if not admin_recipient:
-        print("[SMTP WARNING] contact: Admin email not configured and SMTP_USER unavailable")
-        return jsonify({"message": "Contact form submissions are currently disabled"}), 200
+    required = {"name": "Name", "email": "Email", "message": "Message"}
+    for key, label in required.items():
+        if not str(data.get(key, "")).strip():
+            return jsonify({"error": f"Missing field: {label}"}), 400
 
-    html = f"""<div style="font-family:sans-serif;background:#03030d;color:#e2e8ff;padding:24px;">
-        <h2 style="color:#818cf8;">New Question — BrainHack</h2>
+    contact_email = str(data["email"]).strip()
+    if not contact_email:
+        return jsonify({"error": "Invalid sender email"}), 400
+
+    recipient = ADMIN_EMAIL.strip() if ADMIN_EMAIL and ADMIN_EMAIL.strip() else SMTP_USER.strip()
+    if not recipient:
+        print("[SMTP INFO] contact: no recipient configured, disabling real send")
+        return jsonify({"message": "Contact form is temporarily disabled"}), 200
+
+    # Messages to the admin
+    html = f"""<div style='font-family:sans-serif;background:#03030d;color:#e2e8ff;padding:24px;'>
+        <h2 style='color:#818cf8;'>New Question — BrainHack</h2>
         <p><strong>Name:</strong> {data['name']}</p>
-        <p><strong>Email:</strong> {data['email']}</p>
+        <p><strong>Email:</strong> {contact_email}</p>
         <p><strong>Message:</strong><br>{data['message']}</p>
     </div>"""
-    ok = send_email(admin_recipient, f"BrainHack Question from {data['name']}", html)
-    if ok:
+
+    full_subject = f"BrainHack Contact: {data['name']}"
+
+    success = send_email(recipient, full_subject, html)
+    if success:
         return jsonify({"message": "Message sent"}), 200
+
     return jsonify({
-        "error": "Failed to send email",
-        "details": last_smtp_error
+        "error": "Failed to send contact message",
+        "details": last_smtp_error or "Unknown SMTP error"
     }), 502
 
 
