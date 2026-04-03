@@ -360,12 +360,7 @@ def send_confirmation():
     html = get_registration_email_html(data)
 
     # Respond immediately — SMTP runs in background thread
-    threading.Thread(
-        target=send_email_sync,
-        args=(email, "BrainHack — Registration Received ✓", html),
-        daemon=True
-    ).start()
-
+    send_email_sync(email, "BrainHack — Registration Received ✓", html)
     return jsonify({"message": "Confirmation email sent"}), 200
 
 
@@ -395,13 +390,8 @@ def contact():
     </div>"""
 
     # Respond immediately — SMTP runs in background thread
-    threading.Thread(
-        target=send_email_sync,
-        args=(recipient, f"BrainHack Contact: {data['name']}", html),
-        daemon=True
-    ).start()
-
-    return jsonify({"message": "Message sent"}), 200
+    send_email_sync(email, "BrainHack — Registration Received ✓", html)
+    return jsonify({"message": "Confirmation email sent"}), 200
 
 
 @app.route("/api/participants", methods=["GET"])
