@@ -8,6 +8,7 @@ from flask_cors import CORS
 import mysql.connector
 from mysql.connector import pooling
 from dotenv import load_dotenv
+from email_templates import get_registration_email_html
 
 load_dotenv()
 
@@ -210,77 +211,7 @@ def send_email(to: str, subject: str, html: str):
     return send_email_sync(to, subject, html)
 
 # ─── Email Templates ──────────────────────────────────────────────────────────
-BASE_STYLE = """
-<style>
-  body { font-family: 'Segoe UI', sans-serif; background:#03030d; color:#e2e8ff; margin:0; padding:0; }
-  .container { max-width:600px; margin:40px auto; background:#07071a; border:1px solid #1c1c45;
-               border-radius:12px; overflow:hidden; }
-  .header { background:linear-gradient(135deg,#0c0c26,#111138); padding:40px 32px; text-align:center;
-            border-bottom: 1px solid #1c1c45; }
-  .header-bar { height:3px; background:linear-gradient(90deg,#6366f1,#a78bfa,#22d3ee); margin-bottom:0; }
-  .header h1 { margin:0; font-size:28px; color:#818cf8; letter-spacing:4px; }
-  .header p  { margin:8px 0 0; color:#7b82c4; font-size:13px; letter-spacing:2px; }
-  .body { padding:32px; }
-  .body h2 { color:#818cf8; font-size:20px; margin-top:0; }
-  .body p  { color:#7b82c4; line-height:1.7; }
-  .highlight { background:#0c0c26; border-left:3px solid #818cf8; padding:12px 16px;
-               border-radius:0 8px 8px 0; margin:16px 0; color:#e2e8ff; }
-  .badge { display:inline-block; padding:4px 12px; border-radius:999px; font-size:12px;
-           font-weight:700; letter-spacing:1px; margin-bottom:16px; }
-  .badge-green  { background:#1e1e5e; color:#818cf8; border:1px solid #818cf8; }
-  .badge-red    { background:#2d0f0f; color:#f87171; border:1px solid #f87171; }
-  .footer { padding:20px 32px; text-align:center; border-top:1px solid #1c1c45;
-            color:#3a3a72; font-size:12px; }
-</style>
-"""
-
-def tpl_received(name: str) -> str:
-    return f"""<!DOCTYPE html><html><head>{BASE_STYLE}</head><body>
-<div class="container">
-  <div class="header-bar"></div>
-  <div class="header"><h1>BRAINHACK</h1><p>InfoBrain Club · Hackathon 2026</p></div>
-  <div class="body">
-    <span class="badge badge-green">REGISTRATION RECEIVED</span>
-    <h2>Hey {name}, you're in the queue! 🧠</h2>
-    <p>We've received your registration for <strong>BrainHack</strong> — the InfoBrain Club Hackathon.</p>
-    <div class="highlight">Our team will review your application and get back to you soon. Keep an eye on your inbox!</div>
-    <p>The event takes place <strong>April 17–18, 2026</strong>. Stay tuned for updates.</p>
-    <p style="color:#818cf8;">— The BrainHack Team</p>
-  </div>
-  <div class="footer">BrainHack · InfoBrain Club · Hassiba Ben Bouali University, Chlef</div>
-</div></body></html>"""
-
-def tpl_accepted(name: str) -> str:
-    return f"""<!DOCTYPE html><html><head>{BASE_STYLE}</head><body>
-<div class="container">
-  <div class="header-bar"></div>
-  <div class="header"><h1>BRAINHACK</h1><p>InfoBrain Club · Hackathon 2026</p></div>
-  <div class="body">
-    <span class="badge badge-green">ACCEPTED ✓</span>
-    <h2>Congratulations, {name}! 🎉</h2>
-    <p>We're thrilled to confirm that your application to <strong>BrainHack</strong> has been <strong style="color:#818cf8;">accepted</strong>!</p>
-    <div class="highlight">📅 <strong>April 17–18, 2026</strong><br>Day 1 kicks off at 09:00. Full schedule will be shared closer to the event.</div>
-    <p>Get ready to build, innovate, and compete. We'll send more details about the venue and logistics soon.</p>
-    <p style="color:#818cf8;">— The BrainHack Team</p>
-  </div>
-  <div class="footer">BrainHack · InfoBrain Club · Hassiba Ben Bouali University, Chlef</div>
-</div></body></html>"""
-
-def tpl_rejected(name: str) -> str:
-    return f"""<!DOCTYPE html><html><head>{BASE_STYLE}</head><body>
-<div class="container">
-  <div class="header-bar"></div>
-  <div class="header"><h1>BRAINHACK</h1><p>InfoBrain Club · Hackathon 2026</p></div>
-  <div class="body">
-    <span class="badge badge-red">APPLICATION UPDATE</span>
-    <h2>Thank you for applying, {name}</h2>
-    <p>After careful review, we regret to inform you that we're unable to accommodate your participation in <strong>BrainHack</strong> this time due to limited spots.</p>
-    <div class="highlight">We truly appreciate your interest and encourage you to keep building and innovating. Future editions of BrainHack will be open for registration!</div>
-    <p>Thank you for being part of the InfoBrain community.</p>
-    <p style="color:#818cf8;">— The BrainHack Team</p>
-  </div>
-  <div class="footer">BrainHack · InfoBrain Club · Hassiba Ben Bouali University, Chlef</div>
-</div></body></html>"""
+# All templates have been moved to backend/email_templates.py to keep app.py clean.
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
 
@@ -350,17 +281,16 @@ def register():
 def send_confirmation():
     data = request.get_json(force=True) or {}
     email = data.get("email")
-    full_name = data.get("full_name")
 
-    if not email or not full_name:
-        return jsonify({"error": "Missing email or full_name"}), 400
+    if not email:
+        return jsonify({"error": "Missing email"}), 400
 
     # Send the email synchronously to guarantee delivery since Gunicorn
     # can kill background threads.
     success = send_email(
         email,
         "BrainHack — Registration Received ✓",
-        tpl_received(full_name)
+        get_registration_email_html(data)
     )
     
     if success:
