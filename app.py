@@ -434,7 +434,7 @@ def _update_status(pid: int, status: str):
         conn.commit()
 
         if status == "accepted":
-            send_email(row["email"], "BrainHack — You're Accepted! 🎉", get_accepted_email_html(row["full_name"]))
+            send_email(row["email"], "BrainHack — You're Accepted!", get_accepted_email_html(row["full_name"]))
         else:
             send_email(row["email"], "BrainHack — Application Update", get_rejected_email_html(row["full_name"]))
 
