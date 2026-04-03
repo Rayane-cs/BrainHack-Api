@@ -317,17 +317,35 @@ def register():
             data.get("portfolio_link", "").strip()
         ))
         conn.commit()
-        send_email(
-            data["email"],
-            "BrainHack — Registration Received ✓",
-            tpl_received(data["full_name"])
-        )
         return jsonify({"message": "Registration successful"}), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
         if cur:  cur.close()
         if conn: conn.close()
+
+
+@app.route("/api/send-confirmation", methods=["POST"])
+def send_confirmation():
+    data = request.get_json(force=True) or {}
+    email = data.get("email")
+    full_name = data.get("full_name")
+
+    if not email or not full_name:
+        return jsonify({"error": "Missing email or full_name"}), 400
+
+    # Send the email synchronously to guarantee delivery since Gunicorn
+    # can kill background threads.
+    success = send_email(
+        email,
+        "BrainHack — Registration Received ✓",
+        tpl_received(full_name)
+    )
+    
+    if success:
+        return jsonify({"message": "Confirmation email sent"}), 200
+    else:
+        return jsonify({"error": "Failed to send email"}), 500
 
 
 @app.route("/api/contact", methods=["POST"])
