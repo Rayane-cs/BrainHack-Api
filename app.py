@@ -248,6 +248,16 @@ def send_email(to: str, subject: str, html: str):
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
 
+@app.route("/api/test-smtp", methods=["GET"])
+def test_smtp():
+    result = send_email_sync(
+        ADMIN_EMAIL,
+        "BrainHack SMTP Test",
+        "<p>Test email from Railway</p>"
+    )
+    return jsonify({"sent": result, "last_error": last_smtp_error}), 200
+
+
 @app.route("/api/health", methods=["GET"])
 def health():
     safe_config = DB_CONFIG.copy()
