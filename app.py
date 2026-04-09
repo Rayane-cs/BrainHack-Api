@@ -275,7 +275,10 @@ def register():
         return jsonify({"error": "Registration is closed"}), 403
 
     data = request.get_json(force=True) or {}
-    required = ["full_name", "email", "phone", "registration_number", "level", "speciality"]
+    required = [
+        "full_name", "email", "phone", "registration_number", "level", "speciality",
+        "town_name", "stop_station_name",
+    ]
     for field in required:
         if not data.get(field, "").strip():
             return jsonify({"error": f"Missing field: {field}"}), 400
@@ -304,12 +307,14 @@ def register():
 
         cur.execute("""
             INSERT INTO participants
-              (full_name, email, phone, registration_number, level, speciality, portfolio_link)
-            VALUES (%s,%s,%s,%s,%s,%s,%s)
+              (full_name, email, phone, registration_number, level, speciality,
+               town_name, stop_station_name, portfolio_link)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, (
             data["full_name"], data["email"], data["phone"],
             data["registration_number"], data["level"], data["speciality"],
-            data.get("portfolio_link", "").strip()
+            data["town_name"].strip(), data["stop_station_name"].strip(),
+            data.get("portfolio_link", "").strip() or None,
         ))
         conn.commit()
         return jsonify({"message": "Registration successful"}), 201

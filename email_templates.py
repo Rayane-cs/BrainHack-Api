@@ -53,6 +53,8 @@ def get_registration_email_html(data: dict) -> str:
     level = data.get('level', '—')
     speciality = data.get('speciality', '—')
     portfolio = data.get('portfolio_link') or '—'
+    town = data.get('town_name') or '—'
+    stop = data.get('stop_station_name') or '—'
 
     content = f"""
     <div style="background-color:rgba(0,1,1,0.4);border:1px solid rgba(25,138,205,0.2);border-radius:16px;padding:24px;margin-bottom:24px;">
@@ -64,6 +66,8 @@ def get_registration_email_html(data: dict) -> str:
         <tr><td style="padding:8px 0;color:{_MUTED};">Student ID</td><td style="padding:8px 0;color:{_TEXT_COLOR};">{reg_num}</td></tr>
         <tr><td style="padding:8px 0;color:{_MUTED};">Level</td><td style="padding:8px 0;color:{_TEXT_COLOR};">{level}</td></tr>
         <tr><td style="padding:8px 0;color:{_MUTED};">Speciality</td><td style="padding:8px 0;color:{_TEXT_COLOR};">{speciality}</td></tr>
+        <tr><td style="padding:8px 0;color:{_MUTED};">Town</td><td style="padding:8px 0;color:{_TEXT_COLOR};">{town}</td></tr>
+        <tr><td style="padding:8px 0;color:{_MUTED};">Stop station</td><td style="padding:8px 0;color:{_TEXT_COLOR};">{stop}</td></tr>
         <tr><td style="padding:8px 0;color:{_MUTED};">Portfolio</td><td style="padding:8px 0;color:{_TEXT_COLOR};"><a href="{portfolio}" style="color:{_ACCENT};text-decoration:none;">{portfolio}</a></td></tr>
       </table>
     </div>
