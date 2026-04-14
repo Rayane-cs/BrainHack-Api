@@ -80,6 +80,37 @@ def registration_open() -> bool:
 # ─── DB Config ────────────────────────────────────────────────────────────────
 from urllib.parse import urlparse
 
+def _ensure_participants_table():
+    """Create the participants table if it doesn't exist."""
+    try:
+        # Use a temporary connection to ensure the table
+        conn = mysql.connector.connect(**DB_CONFIG)
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS participants (
+                id                  INT UNSIGNED    NOT NULL AUTO_INCREMENT,
+                full_name           VARCHAR(255)    NOT NULL,
+                email               VARCHAR(255)    NOT NULL,
+                phone               VARCHAR(30)     NOT NULL,
+                registration_number VARCHAR(50)     NOT NULL,
+                level               ENUM('L1','L2','L3','M1','M2') NOT NULL DEFAULT 'L1',
+                speciality          VARCHAR(100)    NOT NULL,
+                town_name           VARCHAR(255)    NOT NULL DEFAULT '',
+                stop_station_name   VARCHAR(255)    NOT NULL DEFAULT '',
+                portfolio_link      VARCHAR(512)    NULL,
+                status              ENUM('pending','accepted','rejected') NOT NULL DEFAULT 'pending',
+                created_at          TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                UNIQUE  KEY uq_email  (email),
+                INDEX       idx_status (status),
+                INDEX       idx_created (created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        """)
+        conn.commit()
+        cursor.close()
+        conn.close()
+    except Exception as exc:
+        print(f"[startup] Could not ensure participants table: {exc}")
 
 def parse_mysql_url(url: str):
     parsed = urlparse(url)
@@ -120,6 +151,10 @@ def init_db_pool():
     global connection_pool, last_pool_error
     if connection_pool is not None:
         return connection_pool
+    
+    # Ensure table exists before starting pool
+    _ensure_participants_table()
+
     try:
         connection_pool = pooling.MySQLConnectionPool(
             pool_name="brainhack_pool",
