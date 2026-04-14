@@ -126,18 +126,29 @@ def parse_mysql_url(url: str):
 
 
 def get_db_config():
-    for env_name in ("MYSQL_URL", "MYSQL_PUBLIC_URL", "DATABASE_URL", "DB_URL", "MYSQL_PRIVATE_URL", "DB_HOST"):
+    # Prioritize individual variables if they are set (best for Vercel/Railway manual config)
+    if os.getenv("DB_HOST"):
+        return {
+            "host": os.getenv("DB_HOST"),
+            "port": int(os.getenv("DB_PORT", 3306)),
+            "user": os.getenv("DB_USER", "root"),
+            "password": os.getenv("DB_PASSWORD", ""),
+            "database": os.getenv("DB_NAME", "railway"),
+        }
+
+    # Fallback to connection strings if DB_HOST is not set
+    for env_name in ("MYSQL_URL", "MYSQL_PUBLIC_URL", "DATABASE_URL", "DB_URL", "MYSQL_PRIVATE_URL"):
         val = os.getenv(env_name, "")
         if val.startswith(("mysql://", "mysql+mysqlconnector://", "mysql+pymysql://")):
             print(f"[DB_CONFIG] Using URI from env var: {env_name}")
             return parse_mysql_url(val)
 
     return {
-        "host": os.getenv("DB_HOST", os.getenv("MYSQL_HOST", "localhost")),
-        "port": int(os.getenv("DB_PORT", os.getenv("MYSQL_PORT", 3306))),
-        "user": os.getenv("DB_USER", os.getenv("MYSQL_USER", "root")),
-        "password": os.getenv("DB_PASSWORD", os.getenv("MYSQL_PASSWORD", "")),
-        "database": os.getenv("DB_NAME", os.getenv("MYSQL_DATABASE", "brainhack")),
+        "host": "localhost",
+        "port": 3306,
+        "user": "root",
+        "password": "",
+        "database": "railway",
     }
 
 
